@@ -18,7 +18,7 @@ Lint + Test (parallel) → Build → Deploy (ECR → ECS Fargate)
 - GitHub repo (Actions enabled)
 - AWS account (only for live deploy)
 
-## Quick Start
+## Quick Start Guide
 1. Clone the repo
 2. pip install -r requirements-dev.txt
 3. pytest
