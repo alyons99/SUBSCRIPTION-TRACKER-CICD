@@ -1,0 +1,141 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: subscription-tracker
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: subscription-tracker
+  ECS_CLUSTER: subscription-tracker-cluster
+  ECS_SERVICE: subscription-tracker-service
+  CONTAINER_NAME: subscription-tracker
+
+jobs:
+  # ---------- Stage 1: Lint ----------
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install ruff==0.16.9
+      - name: Ruff lint (includes bandit security rules)
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+
+  # ---------- Stage 2: Test + dependency audit ----------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt pip-audit
+      - name: Unit tests
+        run: pytest -v
+      - name: Scan dependencies for known CVEs
+        run: pip-audit -r requirements.txt
+
+  # ---------- Stage 3: Build + smoke test ----------
+  build:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
+      - name: Smoke test container
+        run: |
+          docker run -d --name smoke -p 8000:8000 $IMAGE_NAME:${{ github.sha }}
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 2
+          done
+          docker logs smoke
+          exit 1
+      - name: Save image
+        run: docker save $IMAGE_NAME:${{ github.sha }} | gzip > image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: image.tar.gz
+          retention-days: 1
+
+  # ---------- Stage 4: Deploy (main branch only) ----------
+  # Runs in stub mode until the repo variable AWS_DEPLOY_ENABLED is set to "true".
+  # Then it pushes the exact image that passed the smoke test to ECR and rolls it out on ECS Fargate.
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: production
+    permissions:
+      contents: read
+      id-token: write # OIDC: short-lived AWS credentials, no stored access keys
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+      - run: docker load < image.tar.gz
+
+      - name: Deploy (stub)
+        if: vars.AWS_DEPLOY_ENABLED != 'true'
+        run: |
+          echo "Stub mode - would deploy $IMAGE_NAME:${{ github.sha }}"
+          echo "  1. Push image to ECR repo '$ECR_REPOSITORY' in $AWS_REGION"
+          echo "  2. Render deploy/task-definition.json with the new image"
+          echo "  3. Update ECS service '$ECS_SERVICE' on cluster '$ECS_CLUSTER' and wait for stability"
+          echo "Set repo variables AWS_DEPLOY_ENABLED=true and AWS_ROLE_ARN to deploy for real."
+
+      - name: Configure AWS credentials (OIDC)
+        if: vars.AWS_DEPLOY_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        if: vars.AWS_DEPLOY_ENABLED == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image to ECR
+        if: vars.AWS_DEPLOY_ENABLED == 'true'
+        id: push
+        run: |
+          IMAGE_URI=${{ steps.ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+          docker tag $IMAGE_NAME:${{ github.sha }} $IMAGE_URI
+          docker push $IMAGE_URI
+          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Render task definition
+        if: vars.AWS_DEPLOY_ENABLED == 'true'
+        id: taskdef
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: deploy/task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.push.outputs.image }}
+
+      - name: Deploy to ECS Fargate
+        if: vars.AWS_DEPLOY_ENABLED == 'true'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.taskdef.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

@@ -1,0 +1,43 @@
+flowchart TD
+    DEV["Developer<br/>git push / pull request"]
+    GH["GitHub Repository<br/>main branch · PR checks"]
+
+    LINT["Lint<br/>Ruff style + security rules"]
+    TEST["Test<br/>pytest · pip-audit CVE scan"]
+    BUILD["Build<br/>Docker image · smoke test"]
+    DEPLOY["Deploy · main only<br/>production environment gate"]
+
+    OIDC["AWS IAM via OIDC<br/>Short-lived role credentials"]
+    ECR["Amazon ECR<br/>Image tagged with commit SHA"]
+    ECS["ECS Fargate Service<br/>Rolling update · health checks"]
+
+    APP["Flask API Container<br/>gunicorn · non-root user"]
+    DB["SQLite<br/>Subscription records"]
+    CW["CloudWatch Logs<br/>Container stdout/stderr"]
+
+    DEV --> GH
+    GH --> LINT
+    GH --> TEST
+    LINT --> BUILD
+    TEST --> BUILD
+    BUILD --> DEPLOY
+    DEPLOY --> OIDC
+    OIDC --> ECR
+    ECR --> ECS
+    ECS --> APP
+    APP --> DB
+    APP --> CW
+
+    classDef source fill:#8B3A2F,stroke:#5a2019,color:#fff
+    classDef ci fill:#1E3A5F,stroke:#12253d,color:#fff
+    classDef gate fill:#5C3A1E,stroke:#3a2412,color:#fff
+    classDef aws fill:#3D2B7A,stroke:#251a4d,color:#fff
+    classDef run fill:#1E5E40,stroke:#123a27,color:#fff
+    classDef store fill:#3A3A3A,stroke:#222,color:#fff
+
+    class DEV,GH source
+    class LINT,TEST,BUILD ci
+    class DEPLOY gate
+    class OIDC,ECR,ECS aws
+    class APP run
+    class DB,CW store

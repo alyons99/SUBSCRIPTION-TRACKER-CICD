@@ -1,0 +1,31 @@
+{
+  "family": "subscription-tracker",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/subscription-tracker-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "subscription-tracker",
+      "image": "PLACEHOLDER - replaced by the pipeline at deploy time",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "environment": [{ "name": "DATABASE_PATH", "value": "/data/subscriptions.db" }],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/subscription-tracker",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    }
+  ]
+}
