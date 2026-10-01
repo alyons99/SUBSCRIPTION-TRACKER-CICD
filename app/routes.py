@@ -11,6 +11,7 @@ bp = Blueprint("api", __name__)
 BILLING_CYCLES = {"monthly", "yearly"}
 
 
+#payload validation
 def validate(payload):
     """Return (clean_data, error_message)."""
     if not isinstance(payload, dict):
@@ -41,6 +42,7 @@ def validate(payload):
     }, None
 
 
+#CRUD API
 @bp.get("/health")
 def health():
     return jsonify(status="ok")
