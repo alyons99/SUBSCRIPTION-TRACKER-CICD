@@ -1,5 +1,5 @@
 """Subscription Tracker - minimal Flask API backed by SQLite."""
-
+#creating Flash App, setting up DB path
 import os
 
 from flask import Flask
@@ -16,6 +16,7 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    #prod would use RDS or DyanomoDB
     db.init_app(app)
     app.register_blueprint(bp)
     return app
