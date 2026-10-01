@@ -1,5 +1,5 @@
 """SQLite connection handling."""
-
+#using simple sqllite subscriptions table, 
 import os
 import sqlite3
 
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 """
 
-
+#connection
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(current_app.config["DATABASE"])
