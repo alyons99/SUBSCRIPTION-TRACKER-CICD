@@ -1,3 +1,5 @@
+#some basic tests, based on best practicies found online
+
 import pytest
 
 from app import create_app
